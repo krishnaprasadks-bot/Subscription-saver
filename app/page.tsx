@@ -271,7 +271,7 @@ export default function FinancialToolkit() {
         
         {/* Header */}
         <header className="flex flex-col md:flex-row md:items-end justify-between gap-4 pb-4 border-b border-gray-800">
-          <div>
+        <div>
             <div className="flex items-center gap-2 mb-2">
               <Landmark className="w-6 h-6 text-[#22C55E]" />
               <span className="font-space font-bold tracking-tight text-xl">Subscription Saver</span>
