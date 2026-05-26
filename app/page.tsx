@@ -274,7 +274,7 @@ export default function FinancialToolkit() {
           <div>
             <div className="flex items-center gap-2 mb-2">
               <Landmark className="w-6 h-6 text-[#22C55E]" />
-              <span className="font-space font-bold tracking-tight text-xl">Subscription Scout</span>
+              <span className="font-space font-bold tracking-tight text-xl">Subscription Saver</span>
             </div>
             <h1 className="text-3xl md:text-5xl font-space font-extrabold tracking-tight text-white">
               Stop Wasting Money Instantly.
