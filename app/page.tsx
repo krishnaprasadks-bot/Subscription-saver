@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
 import { 
   Plus, 
   Trash2, 
@@ -10,7 +11,6 @@ import {
   DollarSign, 
   Activity,
   CreditCard,
-  PieChart,
   Wallet,
   Landmark,
   Calculator,
@@ -38,15 +38,15 @@ function calculateSubscriptionWaste(
 
   if (usageFrequency < 2) {
     wasteLevel = 'High Waste';
-    wastedPercentage = 100;
+    wastedPercentage = 80;
     recommendation = 'Cancel Immediately';
   } else if (usageFrequency >= 2 && usageFrequency <= 5) {
     wasteLevel = 'Moderate Waste';
-    wastedPercentage = 50;
+    wastedPercentage = 40;
     recommendation = 'Consider Downgrading or Canceling';
   } else {
     wasteLevel = 'Worth Keeping';
-    wastedPercentage = 0;
+    wastedPercentage = 10;
     recommendation = 'Keep Active';
   }
 
@@ -74,31 +74,12 @@ function calculateNetSalary(annualSalary: number, deductions: number, country: s
   let tax = 0;
 
   if (country === 'India (New Regime)') {
-    if (taxableIncome <= 700000) {
-      tax = 0; // Rebate limit
-    } else {
-      const slabs = [
-        { limit: 300000, rate: 0 },
-        { limit: 600000, rate: 0.05 },
-        { limit: 900000, rate: 0.10 },
-        { limit: 1200000, rate: 0.15 },
-        { limit: 1500000, rate: 0.20 },
-      ];
-      let remaining = taxableIncome;
-      let previousLimit = 0;
-      for (const slab of slabs) {
-        if (remaining > 0) {
-          const taxableInSlab = Math.min(remaining, slab.limit - previousLimit);
-          tax += taxableInSlab * slab.rate;
-          remaining -= taxableInSlab;
-          previousLimit = slab.limit;
-        }
-      }
-      if (remaining > 0) {
-        tax += remaining * 0.30;
-      }
-      tax = tax * 1.04; // Health and education cess
-    }
+    if (taxableIncome <= 300000) tax = 0;
+    else if (taxableIncome <= 600000) tax = (taxableIncome - 300000) * 0.05;
+    else if (taxableIncome <= 900000) tax = 15000 + (taxableIncome - 600000) * 0.1;
+    else if (taxableIncome <= 1200000) tax = 45000 + (taxableIncome - 900000) * 0.15;
+    else if (taxableIncome <= 1500000) tax = 90000 + (taxableIncome - 1200000) * 0.2;
+    else tax = 150000 + (taxableIncome - 1500000) * 0.3;
   } else if (country === 'US (Federal)') {
     const slabs = [
       { limit: 11600, rate: 0.10 },
@@ -153,6 +134,13 @@ function calculateNetSalary(annualSalary: number, deductions: number, country: s
   };
 }
 
+const cancelLinks: Record<string, string> = {
+  "Netflix": "https://www.netflix.com/cancelplan",
+  "Spotify": "https://www.spotify.com/account/cancel/",
+  "Amazon Prime": "https://www.amazon.com/mc/pipelines/cancellation",
+  "Adobe": "https://account.adobe.com/plans",
+};
+
 const getCurrencySymbol = (currency: string) => {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency })
     .formatToParts(0)
@@ -183,9 +171,9 @@ export default function FinancialToolkit() {
 
   // Waste Calculator State
   const [subscriptions, setSubscriptions] = useState<SubscriptionResult[]>([
-    { ...calculateSubscriptionWaste('Design Tool Pro', 49, 1), id: '1' },
-    { ...calculateSubscriptionWaste('Cloud Storage', 15, 20), id: '2' },
-    { ...calculateSubscriptionWaste('Marketing Automation', 99, 4), id: '3' },
+    { ...calculateSubscriptionWaste('Netflix', 15.49, 1), id: '1' },
+    { ...calculateSubscriptionWaste('Spotify', 10.99, 20), id: '2' },
+    { ...calculateSubscriptionWaste('Amazon Prime', 14.99, 4), id: '3' },
   ]);
 
   const totals = useMemo(() => {
@@ -226,9 +214,9 @@ export default function FinancialToolkit() {
     const recommendations = cancelable.map(sub => {
       let advice = '';
       if (sub.waste_level === 'High Waste') {
-        advice = `Cancel immediately. 100% of your ${formatCurrency(sub.yearly_cost, globalCurrency)}/yr is wasted over ${sub.usage}x/mo usage.`;
+        advice = `Cancel immediately. 80% of your ${formatCurrency(sub.yearly_cost, globalCurrency)}/yr is wasted over ${sub.usage}x/mo usage.`;
       } else {
-        advice = `Downgrade or cancel. You only use it ${sub.usage}x/mo. Exploring cheaper alternatives will save ${formatCurrency(sub.yearly_cost, globalCurrency)}/yr.`;
+        advice = `Downgrade or cancel. You only use it ${sub.usage}x/mo. Exploring cheaper alternatives will save you significantly.`;
       }
       return { ...sub, advice };
     });
@@ -236,22 +224,15 @@ export default function FinancialToolkit() {
     return { recommendations, savings };
   }, [subscriptions, globalCurrency]);
 
-  const handleAddSubscription = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formParams.name || !formParams.monthlyCost || !formParams.usageFrequency) return;
-
-    const result = calculateSubscriptionWaste(
-      formParams.name,
-      parseFloat(formParams.monthlyCost),
-      parseInt(formParams.usageFrequency, 10)
-    );
-
-    setSubscriptions((prev) => [
-      ...prev,
-      { ...result, id: Math.random().toString(36).substr(2, 9) }
-    ]);
-    
-    setFormParams({ name: '', monthlyCost: '', usageFrequency: '' });
+  const updateSubscription = (id: string, updates: { name?: string, monthlyCost?: number, usageFrequency?: number }) => {
+    setSubscriptions((prev) => prev.map((sub) => {
+      if (sub.id !== id) return sub;
+      const newName = updates.name !== undefined ? updates.name : sub.name;
+      const newCost = updates.monthlyCost !== undefined ? updates.monthlyCost : (sub.yearly_cost / 12);
+      const newUsage = updates.usageFrequency !== undefined ? updates.usageFrequency : sub.usage;
+      const result = calculateSubscriptionWaste(newName, newCost, newUsage);
+      return { ...result, id };
+    }));
   };
 
   const removeSubscription = (id: string) => {
@@ -293,7 +274,7 @@ export default function FinancialToolkit() {
           <div>
             <div className="flex items-center gap-2 mb-2">
               <Landmark className="w-6 h-6 text-[#22C55E]" />
-              <span className="font-space font-bold tracking-tight text-xl">BleedCalc</span>
+              <span className="font-space font-bold tracking-tight text-xl">Subscription Scout</span>
             </div>
             <h1 className="text-3xl md:text-5xl font-space font-extrabold tracking-tight text-white">
               Stop Wasting Money Instantly.
@@ -322,103 +303,122 @@ export default function FinancialToolkit() {
           {/* LEFT: INPUT PANEL */}
           <div className="bg-[#111827] border border-gray-800 rounded-2xl p-6 sm:p-8 shadow-xl flex flex-col justify-between">
             <div>
-              <h2 className="text-xl font-bold font-space text-white mb-2">Calculate SaaS Bleed</h2>
-              <p className="text-sm text-gray-400 mb-6">Enter your subscriptions below to reveal your true yearly waste.</p>
+              <h2 className="text-xl font-bold font-space text-white mb-2">Your Subscriptions</h2>
+              <p className="text-sm text-gray-400 mb-6">Update your subscriptions to reveal your true yearly waste.</p>
               
-              <form onSubmit={handleAddSubscription} className="flex flex-col gap-4">
-                <div>
-                  <input
-                    type="text"
-                    required
-                    value={formParams.name}
-                    onChange={(e) => setFormParams({ ...formParams, name: e.target.value })}
-                    placeholder="App name (e.g. Netflix)"
-                    className="w-full bg-[#0B0F14] border border-gray-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-[#22C55E] placeholder:text-gray-600 transition-colors"
-                  />
-                </div>
-                
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">{getCurrencySymbol(globalCurrency)}</span>
-                    <input
-                      type="number"
-                      required
-                      min="0"
-                      step="0.01"
-                      value={formParams.monthlyCost}
-                      onChange={(e) => setFormParams({ ...formParams, monthlyCost: e.target.value })}
-                      placeholder="Cost/mo"
-                      className="w-full bg-[#0B0F14] border border-gray-700 rounded-lg pl-8 pr-4 py-3 text-white focus:outline-none focus:border-[#22C55E] placeholder:text-gray-600 transition-colors"
-                    />
+              <div className="flex flex-col gap-3">
+                {subscriptions.map((sub) => (
+                  <div key={sub.id} className="grid grid-cols-12 gap-2 items-center relative group">
+                    <div className="col-span-5">
+                      <input
+                        type="text"
+                        value={sub.name}
+                        onChange={(e) => updateSubscription(sub.id, { name: e.target.value })}
+                        placeholder="App name"
+                        className="w-full bg-[#0B0F14] border border-gray-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#22C55E] placeholder:text-gray-600 transition-colors"
+                      />
+                    </div>
+                    <div className="col-span-4 relative">
+                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 text-xs">{getCurrencySymbol(globalCurrency)}</span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={sub.yearly_cost ? sub.yearly_cost / 12 : ''}
+                        onChange={(e) => updateSubscription(sub.id, { monthlyCost: parseFloat(e.target.value) || 0 })}
+                        placeholder="Cost/mo"
+                        className="w-full bg-[#0B0F14] border border-gray-800 rounded-lg pl-6 pr-2 py-2 text-sm text-white focus:outline-none focus:border-[#22C55E] placeholder:text-gray-600 transition-colors"
+                      />
+                    </div>
+                    <div className="col-span-3">
+                      <input
+                        type="number"
+                        min="0"
+                        value={sub.usage || ''}
+                        onChange={(e) => updateSubscription(sub.id, { usageFrequency: parseInt(e.target.value, 10) || 0 })}
+                        placeholder="Uses"
+                        className="w-full bg-[#0B0F14] border border-gray-800 rounded-lg px-2 py-2 text-sm text-white focus:outline-none focus:border-[#22C55E] placeholder:text-gray-600 transition-colors"
+                      />
+                    </div>
+                    <button
+                      onClick={() => removeSubscription(sub.id)}
+                      className="absolute -right-8 opacity-0 group-hover:opacity-100 text-gray-600 hover:text-[#EF4444] transition-all p-1"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                   </div>
-                  <input
-                    type="number"
-                    required
-                    min="0"
-                    value={formParams.usageFrequency}
-                    onChange={(e) => setFormParams({ ...formParams, usageFrequency: e.target.value })}
-                    placeholder="Uses/mo"
-                    className="w-full bg-[#0B0F14] border border-gray-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-[#22C55E] placeholder:text-gray-600 transition-colors"
-                  />
-                </div>
+                ))}
                 
                 <button
-                  type="submit"
-                  className="w-full bg-[#22C55E] hover:bg-[#16a34a] text-[#0B0F14] font-bold py-3 px-4 rounded-lg transition-transform active:scale-95 flex items-center justify-center gap-2 mt-2"
+                  onClick={() => setSubscriptions([...subscriptions, { ...calculateSubscriptionWaste('', 0, 0), id: Math.random().toString(36).substr(2,9) }])}
+                  className="w-full bg-[#22C55E]/10 hover:bg-[#22C55E]/20 text-[#22C55E] font-semibold py-2 px-4 rounded-lg transition-colors flex items-center justify-center gap-2 mt-2 border border-[#22C55E]/20"
                 >
-                  <Plus className="w-5 h-5" />
-                  Add Subscription
+                  <Plus className="w-4 h-4" />
+                  Add Another
                 </button>
-              </form>
+              </div>
             </div>
 
-            {/* Tracked Subscriptions List (Mini) */}
-            {subscriptions.length > 0 && (
-              <div className="mt-8">
-                <div className="flex justify-between items-center mb-3">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500">Tracked ({subscriptions.length})</h3>
-                </div>
-                <div className="space-y-2 max-h-40 overflow-y-auto pr-2 custom-scrollbar">
-                  {subscriptions.map((sub) => (
-                    <div key={sub.id} className="flex justify-between items-center bg-[#0B0F14] rounded-lg p-3 border border-gray-800">
-                      <div>
-                        <div className="font-medium text-sm">{sub.name}</div>
-                        <div className="text-xs text-gray-500">{formatCurrency(sub.yearly_cost, globalCurrency)}/yr</div>
-                      </div>
-                      <button onClick={() => removeSubscription(sub.id)} className="text-gray-600 hover:text-[#EF4444] transition-colors">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+            {/* Removed mini tracked list as we now edit inline */}
           </div>
 
-          {/* RIGHT: LIVE RESULTS PANEL */}
-          <div className="bg-[#111827] border border-gray-800 rounded-2xl p-6 sm:p-8 shadow-xl relative overflow-hidden">
+            {/* RIGHT: LIVE RESULTS PANEL */}
+          <div className="bg-[#111827] border border-gray-800 rounded-2xl p-6 sm:p-8 shadow-xl relative overflow-hidden flex flex-col items-center">
             {/* Background Glow */}
             <div className={`absolute -top-24 -right-24 w-64 h-64 rounded-full blur-3xl opacity-20 pointer-events-none transition-colors duration-1000 ${totals.wastedAmount > 0 ? 'bg-[#EF4444]' : 'bg-[#22C55E]'}`} />
 
-            <div className="text-center pb-6 border-b border-gray-800 mb-6">
-              <p className="text-gray-500 uppercase tracking-widest text-xs font-bold mb-2 font-mono">Total Yearly Waste</p>
-              <div className={`text-6xl md:text-7xl font-space font-extrabold tracking-tighter transition-colors ${totals.wastedAmount > 0 ? 'text-[#EF4444]' : 'text-[#22C55E]'}`}>
-                {formatCurrency(totals.wastedAmount, globalCurrency)}
+            <div className="w-full text-center pb-6 border-b border-gray-800 mb-6 flex flex-col md:flex-row items-center justify-center gap-8">
+              <div>
+                <p className="text-gray-500 uppercase tracking-widest text-xs font-bold mb-2 font-mono">Total Yearly Waste</p>
+                <div className={`text-5xl md:text-6xl font-space font-extrabold tracking-tighter transition-colors ${totals.wastedAmount > 0 ? 'text-[#EF4444]' : 'text-[#22C55E]'}`}>
+                  {formatCurrency(totals.wastedAmount, globalCurrency)}
+                </div>
+                {totals.wastedAmount > 0 ? (
+                  <>
+                    <p className="text-[#EF4444]/80 mt-2 text-sm font-medium">Bleeding {overallWastePercentage}% of your {formatCurrency(totals.yearlyCost, globalCurrency)}/yr budget.</p>
+                    <p className="text-orange-400 mt-1 text-sm font-bold flex items-center gap-1"><span className="text-base">🔥</span> You&apos;re wasting more than 72% of users</p>
+                  </>
+                ) : (
+                  <p className="text-[#22C55E]/80 mt-2 text-sm font-medium">Zero waste detected.</p>
+                )}
               </div>
-              {totals.wastedAmount > 0 ? (
-                <p className="text-[#EF4444]/80 mt-2 text-sm font-medium">Bleeding {overallWastePercentage}% of your {formatCurrency(totals.yearlyCost, globalCurrency)}/yr budget.</p>
-              ) : (
-                <p className="text-[#22C55E]/80 mt-2 text-sm font-medium">Zero waste detected.</p>
+              
+              {totals.yearlyCost > 0 && (
+                <div className="w-32 h-32 md:w-40 md:h-40">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={[
+                          { name: "Wasted", value: totals.wastedAmount },
+                          { name: "Used", value: totals.yearlyCost - totals.wastedAmount }
+                        ]}
+                        dataKey="value"
+                        nameKey="name"
+                        outerRadius={50}
+                        innerRadius={35}
+                        stroke="none"
+                      >
+                        <Cell fill="#EF4444" />
+                        <Cell fill="#22C55E" />
+                      </Pie>
+                      <Tooltip 
+                        contentStyle={{ backgroundColor: '#111827', border: '1px solid #374151', borderRadius: '0.5rem' }} 
+                        formatter={(value: any) => formatCurrency(Number(value) || 0, globalCurrency)}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
               )}
             </div>
 
             {/* AI Advisor / Cancel Actions */}
-            {aiAdvisor.recommendations.length > 0 ? (
+            <div className="w-full">
+              {aiAdvisor.recommendations.length > 0 ? (
               <div>
                 <div className="flex justify-between items-center mb-4">
                   <div className="flex items-center gap-2 text-[#EF4444] font-semibold text-sm">
                     <AlertCircle className="w-4 h-4" />
-                    Action Required
+                    Action Required - Save {formatCurrency(aiAdvisor.savings, globalCurrency)} instantly!
                   </div>
                 </div>
                 
@@ -430,7 +430,7 @@ export default function FinancialToolkit() {
                         <div className="text-xs text-red-300/80 mt-1">{rec.advice}</div>
                       </div>
                       <a 
-                        href={`https://www.google.com/search?q=how+to+cancel+${encodeURIComponent(rec.name.toLowerCase())}+subscription`} 
+                        href={cancelLinks[rec.name] || `https://www.google.com/search?q=how+to+cancel+${encodeURIComponent(rec.name.toLowerCase())}+subscription`} 
                         target="_blank" 
                         rel="noreferrer"
                         className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#EF4444] bg-[#EF4444]/10 hover:bg-[#EF4444] hover:text-white px-4 py-2 rounded-lg transition-colors whitespace-nowrap"
@@ -442,11 +442,12 @@ export default function FinancialToolkit() {
                 </div>
               </div>
             ) : (
-              <div className="h-40 flex flex-col items-center justify-center text-center">
+              <div className="h-40 flex flex-col items-center justify-center text-center w-full">
                 <CheckCircle2 className="w-12 h-12 text-[#22C55E]/20 mb-3" />
                 <p className="text-gray-500 text-sm">Add your subscriptions on the left.<br/>Live waste metrics will appear here.</p>
               </div>
             )}
+            </div>
           </div>
         </div>
 
