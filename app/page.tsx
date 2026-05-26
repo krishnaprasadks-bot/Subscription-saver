@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { 
   Plus, 
   Trash2, 
@@ -16,8 +16,7 @@ import {
   Calculator,
   Percent,
   Receipt,
-  ArrowRight,
-  Sparkles
+  ArrowRight
 } from 'lucide-react';
 
 /**
@@ -154,10 +153,10 @@ function calculateNetSalary(annualSalary: number, deductions: number, country: s
   };
 }
 
-const getCurrency = (country: string) => {
-  if (country === 'India (New Regime)') return 'INR';
-  if (country === 'UK') return 'GBP';
-  return 'USD';
+const getCurrencySymbol = (currency: string) => {
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency })
+    .formatToParts(0)
+    .find(p => p.type === 'currency')?.value || '$';
 };
 
 const formatCurrency = (amount: number, currency: string = 'USD') => {
@@ -173,8 +172,6 @@ const formatCurrency = (amount: number, currency: string = 'USD') => {
 type SubscriptionResult = ReturnType<typeof calculateSubscriptionWaste> & { id: string };
 
 export default function FinancialToolkit() {
-  const [activeTab, setActiveTab] = useState<'waste' | 'salary'>('waste');
-
   // Salary Calculator State
   const [salaryParams, setSalaryParams] = useState({
     annualSalary: '100000',
@@ -182,11 +179,7 @@ export default function FinancialToolkit() {
     country: 'US (Federal)'
   });
 
-  const salaryResult = useMemo(() => {
-    const annual = parseFloat(salaryParams.annualSalary) || 0;
-    const ded = parseFloat(salaryParams.deductions) || 0;
-    return calculateNetSalary(annual, ded, salaryParams.country);
-  }, [salaryParams]);
+  const [globalCurrency, setGlobalCurrency] = useState('USD');
 
   // Waste Calculator State
   const [subscriptions, setSubscriptions] = useState<SubscriptionResult[]>([
@@ -194,12 +187,6 @@ export default function FinancialToolkit() {
     { ...calculateSubscriptionWaste('Cloud Storage', 15, 20), id: '2' },
     { ...calculateSubscriptionWaste('Marketing Automation', 99, 4), id: '3' },
   ]);
-
-  const [formParams, setFormParams] = useState({
-    name: '',
-    monthlyCost: '',
-    usageFrequency: '',
-  });
 
   const totals = useMemo(() => {
     return subscriptions.reduce(
@@ -212,54 +199,21 @@ export default function FinancialToolkit() {
     );
   }, [subscriptions]);
 
+  const salaryResult = useMemo(() => {
+    const annual = parseFloat(salaryParams.annualSalary) || 0;
+    const ded = totals.yearlyCost;
+    return calculateNetSalary(annual, ded, salaryParams.country);
+  }, [salaryParams.annualSalary, salaryParams.country, totals.yearlyCost]);
+
+  const [formParams, setFormParams] = useState({
+    name: '',
+    monthlyCost: '',
+    usageFrequency: '',
+  });
+
   const overallWastePercentage = totals.yearlyCost === 0 
     ? 0 
     : Math.round((totals.wastedAmount / totals.yearlyCost) * 100);
-
-  const [aiBleedInsight, setAiBleedInsight] = useState('');
-  const [aiSalaryInsight, setAiSalaryInsight] = useState('');
-  const [isAnalyzingBleed, setIsAnalyzingBleed] = useState(false);
-  const [isAnalyzingSalary, setIsAnalyzingSalary] = useState(false);
-
-  useEffect(() => {
-    let active = true;
-    if (subscriptions.length > 0) {
-      setTimeout(() => setIsAnalyzingBleed(true), 0);
-      fetch('/api/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'bleed', data: subscriptions.map(s => ({ name: s.name, cost: s.yearly_cost, usage: s.usage })) })
-      })
-      .then(res => res.json())
-      .then(data => {
-        if (active) {
-          setAiBleedInsight(data.text);
-          setIsAnalyzingBleed(false);
-        }
-      })
-      .catch(() => { if (active) setIsAnalyzingBleed(false); });
-    }
-    return () => { active = false; };
-  }, [subscriptions]);
-
-  useEffect(() => {
-    let active = true;
-    setTimeout(() => setIsAnalyzingSalary(true), 0);
-    fetch('/api/analyze', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: 'salary', data: salaryResult })
-    })
-    .then(res => res.json())
-    .then(data => {
-      if (active) {
-        setAiSalaryInsight(data.text);
-        setIsAnalyzingSalary(false);
-      }
-    })
-    .catch(() => { if (active) setIsAnalyzingSalary(false); });
-    return () => { active = false; };
-  }, [salaryResult]);
 
   const aiAdvisor = useMemo(() => {
     const cancelable = subscriptions
@@ -272,15 +226,15 @@ export default function FinancialToolkit() {
     const recommendations = cancelable.map(sub => {
       let advice = '';
       if (sub.waste_level === 'High Waste') {
-        advice = `Cancel immediately. 100% of your ${formatCurrency(sub.yearly_cost)}/yr is wasted over ${sub.usage}x/mo usage.`;
+        advice = `Cancel immediately. 100% of your ${formatCurrency(sub.yearly_cost, globalCurrency)}/yr is wasted over ${sub.usage}x/mo usage.`;
       } else {
-        advice = `Downgrade or cancel. You only use it ${sub.usage}x/mo. Exploring cheaper alternatives will save ${formatCurrency(sub.yearly_cost)}/yr.`;
+        advice = `Downgrade or cancel. You only use it ${sub.usage}x/mo. Exploring cheaper alternatives will save ${formatCurrency(sub.yearly_cost, globalCurrency)}/yr.`;
       }
       return { ...sub, advice };
     });
 
     return { recommendations, savings };
-  }, [subscriptions]);
+  }, [subscriptions, globalCurrency]);
 
   const handleAddSubscription = (e: React.FormEvent) => {
     e.preventDefault();
@@ -303,9 +257,6 @@ export default function FinancialToolkit() {
   const removeSubscription = (id: string) => {
     setSubscriptions((prev) => prev.filter((s) => s.id !== id));
   };
-
-
-  const currentCurrency = activeTab === 'salary' ? getCurrency(salaryParams.country) : 'USD';
 
   const getWasteBadgeStyle = (level: string) => {
     switch (level) {
@@ -334,319 +285,262 @@ export default function FinancialToolkit() {
   };
 
   return (
-    <main className="min-h-screen p-4 sm:p-8 lg:p-12 max-w-6xl mx-auto space-y-8">
-      {/* Header */}
-      <header
-        className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-gray-200 pb-6"
-      >
-        <div>
-          <h1 className="text-3xl md:text-4xl font-space font-bold tracking-tight text-gray-900 flex items-center gap-2">
-            <Landmark className="w-8 h-8 text-blue-600" />
-            Financial Toolkit
-          </h1>
-          <p className="text-gray-500 mt-2 text-sm md:text-base">
-            Optimize your SaaS subscriptions and calculate your net salary.
-          </p>
-        </div>
+    <main className="min-h-screen bg-[#0B0F14] text-white p-4 sm:p-6 lg:p-10 font-sans">
+      <div className="max-w-7xl mx-auto space-y-8">
         
-        <div className="flex bg-gray-100 p-1 rounded-lg">
-          <button
-            onClick={() => setActiveTab('waste')}
-            className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
-              activeTab === 'waste' 
-                ? 'bg-white text-gray-900 shadow-sm' 
-                : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            SaaS Bleed
-          </button>
-          <button
-            onClick={() => setActiveTab('salary')}
-            className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
-              activeTab === 'salary' 
-                ? 'bg-white text-gray-900 shadow-sm' 
-                : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            Salary Calc
-          </button>
-        </div>
-      </header>
-
-      {activeTab === 'waste' ? (
-        <div
-          key="waste-tab"
-          className="max-w-3xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300"
-        >
-          {/* Headline & Instant Input */}
-          <div className="text-center pt-4 sm:pt-8 mb-8">
-            <h2 className="text-4xl sm:text-5xl font-space font-extrabold text-gray-900 tracking-tight leading-tight mb-4">
-              Stop bleeding money <br className="hidden sm:block" /> on unused SaaS.
-            </h2>
-            <p className="text-lg text-gray-500 mb-8 max-w-xl mx-auto">
-              Find out exactly how much cash you&apos;re burning on subscriptions and get instant cancellation links.
-            </p>
-
-            <form 
-              onSubmit={handleAddSubscription} 
-              className="bg-white rounded-2xl shadow-xl shadow-gray-200/50 border border-gray-200 p-2 sm:p-2 flex flex-col sm:flex-row items-stretch sm:items-center relative z-10 mx-auto"
+        {/* Header */}
+        <header className="flex flex-col md:flex-row md:items-end justify-between gap-4 pb-4 border-b border-gray-800">
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <Landmark className="w-6 h-6 text-[#22C55E]" />
+              <span className="font-space font-bold tracking-tight text-xl">BleedCalc</span>
+            </div>
+            <h1 className="text-3xl md:text-5xl font-space font-extrabold tracking-tight text-white">
+              Stop Wasting Money Instantly.
+            </h1>
+          </div>
+          <div className="flex items-center gap-3">
+            <label className="text-sm text-gray-400 font-medium">Currency</label>
+            <select
+              value={globalCurrency}
+              onChange={(e) => setGlobalCurrency(e.target.value)}
+              className="bg-[#111827] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-[#22C55E] cursor-pointer"
             >
-              <div className="flex-1 min-w-0">
-                <input
-                  type="text"
-                  required
-                  value={formParams.name}
-                  onChange={(e) => setFormParams({ ...formParams, name: e.target.value })}
-                  placeholder="App name (e.g. Netflix)"
-                  className="w-full px-4 py-3 sm:py-4 bg-transparent border-none focus:ring-0 outline-none text-base placeholder:text-gray-400 font-medium"
-                />
-              </div>
-              <div className="w-full sm:w-32 border-t sm:border-t-0 sm:border-l border-gray-100 flex-shrink-0">
-                <div className="relative h-full flex items-center">
-                  <span className="absolute left-3 text-gray-400 font-medium">$</span>
+              <option value="USD">USD ($)</option>
+              <option value="INR">INR (₹)</option>
+              <option value="GBP">GBP (£)</option>
+              <option value="EUR">EUR (€)</option>
+              <option value="CAD">CAD ($)</option>
+              <option value="AUD">AUD ($)</option>
+            </select>
+          </div>
+        </header>
+
+        {/* Top Grid: SaaS Bleed Calculator */}
+        <div className="grid lg:grid-cols-2 gap-6">
+          
+          {/* LEFT: INPUT PANEL */}
+          <div className="bg-[#111827] border border-gray-800 rounded-2xl p-6 sm:p-8 shadow-xl flex flex-col justify-between">
+            <div>
+              <h2 className="text-xl font-bold font-space text-white mb-2">Calculate SaaS Bleed</h2>
+              <p className="text-sm text-gray-400 mb-6">Enter your subscriptions below to reveal your true yearly waste.</p>
+              
+              <form onSubmit={handleAddSubscription} className="flex flex-col gap-4">
+                <div>
+                  <input
+                    type="text"
+                    required
+                    value={formParams.name}
+                    onChange={(e) => setFormParams({ ...formParams, name: e.target.value })}
+                    placeholder="App name (e.g. Netflix)"
+                    className="w-full bg-[#0B0F14] border border-gray-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-[#22C55E] placeholder:text-gray-600 transition-colors"
+                  />
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">{getCurrencySymbol(globalCurrency)}</span>
+                    <input
+                      type="number"
+                      required
+                      min="0"
+                      step="0.01"
+                      value={formParams.monthlyCost}
+                      onChange={(e) => setFormParams({ ...formParams, monthlyCost: e.target.value })}
+                      placeholder="Cost/mo"
+                      className="w-full bg-[#0B0F14] border border-gray-700 rounded-lg pl-8 pr-4 py-3 text-white focus:outline-none focus:border-[#22C55E] placeholder:text-gray-600 transition-colors"
+                    />
+                  </div>
                   <input
                     type="number"
                     required
                     min="0"
-                    step="0.01"
-                    value={formParams.monthlyCost}
-                    onChange={(e) => setFormParams({ ...formParams, monthlyCost: e.target.value })}
-                    placeholder="Cost/mo"
-                    className="w-full pl-7 pr-4 py-3 sm:py-4 bg-transparent border-none focus:ring-0 outline-none text-base placeholder:text-gray-400 font-medium"
+                    value={formParams.usageFrequency}
+                    onChange={(e) => setFormParams({ ...formParams, usageFrequency: e.target.value })}
+                    placeholder="Uses/mo"
+                    className="w-full bg-[#0B0F14] border border-gray-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-[#22C55E] placeholder:text-gray-600 transition-colors"
                   />
                 </div>
-              </div>
-              <div className="w-full sm:w-36 border-t sm:border-t-0 sm:border-l border-gray-100 flex-shrink-0">
-                <input
-                  type="number"
-                  required
-                  min="0"
-                  value={formParams.usageFrequency}
-                  onChange={(e) => setFormParams({ ...formParams, usageFrequency: e.target.value })}
-                  placeholder="Uses/mo"
-                  className="w-full px-4 py-3 sm:py-4 bg-transparent border-none focus:ring-0 outline-none text-base placeholder:text-gray-400 font-medium"
-                />
-              </div>
-              <div className="pt-2 sm:pt-0 sm:pl-2 w-full sm:w-auto">
+                
                 <button
                   type="submit"
-                  className="w-full sm:w-auto bg-red-600 hover:bg-red-700 text-white font-semibold py-3 sm:py-4 px-8 rounded-xl transition-colors whitespace-nowrap flex items-center justify-center gap-2"
+                  className="w-full bg-[#22C55E] hover:bg-[#16a34a] text-[#0B0F14] font-bold py-3 px-4 rounded-lg transition-transform active:scale-95 flex items-center justify-center gap-2 mt-2"
                 >
-                  <TrendingDown className="w-4 h-4" />
-                  Add
+                  <Plus className="w-5 h-5" />
+                  Add Subscription
                 </button>
-              </div>
-            </form>
-          </div>
+              </form>
+            </div>
 
-          {subscriptions.length > 0 && (
-            <div 
-              className="bg-white rounded-3xl shadow-sm border border-gray-100 p-6 sm:p-10 pt-8 animate-in zoom-in-95 duration-300"
-            >
-              {/* Total Bleed Visual */}
-              <div className="text-center border-b border-gray-100 pb-8 mb-8">
-                <p className="text-gray-400 uppercase tracking-widest text-xs font-bold mb-3 font-mono">Current Yearly Bleed</p>
-                <div className="flex justify-center items-center gap-2">
-                  <span className={`text-6xl sm:text-7xl font-space font-extrabold tracking-tighter ${totals.wastedAmount > 0 ? 'text-red-500' : 'text-emerald-500'}`}>
-                    {formatCurrency(totals.wastedAmount)}
-                  </span>
+            {/* Tracked Subscriptions List (Mini) */}
+            {subscriptions.length > 0 && (
+              <div className="mt-8">
+                <div className="flex justify-between items-center mb-3">
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500">Tracked ({subscriptions.length})</h3>
                 </div>
-                {totals.wastedAmount > 0 ? (
-                  <p className="text-red-600/80 mt-3 text-sm font-medium">You are bleeding {overallWastePercentage}% of your total ${formatCurrency(totals.yearlyCost)}/yr SaaS budget.</p>
-                ) : (
-                  <p className="text-emerald-600/80 mt-3 text-sm font-medium">Zero bleed! You are using all your subscriptions effectively.</p>
-                )}
-                <p className="text-gray-400 text-xs mt-2">*Estimates only</p>
-              </div>
-
-              {/* AI Insight */}
-              {(aiBleedInsight || isAnalyzingBleed) && (
-                <div className="mb-10 bg-blue-50/50 border border-blue-100 p-4 rounded-2xl flex flex-col gap-2 relative overflow-hidden">
-                  <div className="flex items-center gap-2 text-blue-600 font-semibold text-sm">
-                    <Sparkles className="w-4 h-4" />
-                    AI Bleed Analysis
-                  </div>
-                  <div className="text-sm text-blue-900 leading-relaxed font-medium">
-                    {isAnalyzingBleed ? 'Analyzing your subscriptions...' : aiBleedInsight}
-                  </div>
-                </div>
-              )}
-
-              {/* Quick Actions (AI Advice & Cancellation) */}
-              {aiAdvisor.recommendations.length > 0 && (
-                <div className="mb-10">
-                  <div className="flex items-center gap-2 mb-4">
-                    <AlertCircle className="w-5 h-5 text-red-500" />
-                    <h3 className="font-semibold text-gray-900">Urgent Recommendations</h3>
-                  </div>
-                  <div className="grid sm:grid-cols-2 gap-4">
-                    {aiAdvisor.recommendations.map(rec => (
-                      <div key={`rec-${rec.id}`} className="bg-red-50/50 border border-red-100/50 p-5 rounded-2xl flex flex-col justify-between items-start gap-4 group">
-                        <div>
-                          <div className="text-red-950 font-bold text-lg mb-1">{rec.name}</div>
-                          <div className="text-sm text-red-800/80 leading-relaxed font-medium">{rec.advice}</div>
-                        </div>
-                        <a 
-                          href={`https://www.google.com/search?q=how+to+cancel+${encodeURIComponent(rec.name.toLowerCase())}+subscription`} 
-                          target="_blank" 
-                          rel="noreferrer"
-                          className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-red-600 bg-red-100 px-4 py-2.5 rounded-lg group-hover:bg-red-600 group-hover:text-white transition-colors w-full sm:w-auto justify-center"
-                        >
-                          Cancel Now <ArrowRight className="w-3 h-3" />
-                        </a>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Subscription List */}
-              <div>
-                <div className="flex justify-between items-center mb-4 px-2">
-                  <h3 className="font-semibold text-gray-900 text-sm">Tracked Subscriptions</h3>
-                  <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full font-semibold">{subscriptions.length} Apps</span>
-                </div>
-                <div className="divide-y divide-gray-50 border border-gray-100 rounded-2xl overflow-hidden">
+                <div className="space-y-2 max-h-40 overflow-y-auto pr-2 custom-scrollbar">
                   {subscriptions.map((sub) => (
-                    <div key={sub.id} className="p-4 sm:p-5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 hover:bg-gray-50 transition-colors">
-                      <div className="flex items-start gap-3">
-                        <div className="p-2 bg-white border border-gray-200 rounded-lg shadow-sm">
-                          <CreditCard className="w-5 h-5 text-gray-400" />
-                        </div>
-                        <div>
-                          <div className="font-semibold text-gray-900">{sub.name}</div>
-                          <div className="text-xs text-gray-500 mt-1 font-mono">
-                            {formatCurrency(sub.yearly_cost)}/yr • {sub.usage} uses/mo
-                          </div>
-                        </div>
+                    <div key={sub.id} className="flex justify-between items-center bg-[#0B0F14] rounded-lg p-3 border border-gray-800">
+                      <div>
+                        <div className="font-medium text-sm">{sub.name}</div>
+                        <div className="text-xs text-gray-500">{formatCurrency(sub.yearly_cost, globalCurrency)}/yr</div>
                       </div>
-                      <div className="flex items-center justify-between sm:justify-end gap-3 w-full sm:w-auto">
-                        <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold uppercase tracking-wider border ${getWasteBadgeStyle(sub.waste_level)}`}>
-                          {sub.waste_level}
-                        </span>
-                        <button
-                          onClick={() => removeSubscription(sub.id)}
-                          className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                          aria-label="Remove subscription"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
+                      <button onClick={() => removeSubscription(sub.id)} className="text-gray-600 hover:text-[#EF4444] transition-colors">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
                   ))}
                 </div>
               </div>
-            </div>
-          )}
-        </div>
-      ) : (
-        <div
-          key="salary-tab"
-          className="max-w-3xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300"
-        >
-          {/* Headline & Instant Input */}
-          <div className="text-center pt-4 sm:pt-8 mb-8">
-            <h2 className="text-4xl sm:text-5xl font-space font-extrabold text-gray-900 tracking-tight leading-tight mb-4">
-              Real Monthly Salary. <br className="hidden sm:block" /> Post Tax & Inflation.
-            </h2>
-            <p className="text-lg text-gray-500 mb-8 max-w-xl mx-auto">
-              Calculate your exact take-home pay under the new regime. Protect your purchasing power.
-            </p>
+            )}
+          </div>
 
-            <div className="bg-white rounded-2xl shadow-xl shadow-gray-200/50 border border-gray-200 p-2 sm:p-2 flex flex-col sm:flex-row items-stretch sm:items-center relative z-10 mx-auto">
-              <div className="flex-1 min-w-0 border-b sm:border-b-0 sm:border-r border-gray-100 flex-shrink-0">
+          {/* RIGHT: LIVE RESULTS PANEL */}
+          <div className="bg-[#111827] border border-gray-800 rounded-2xl p-6 sm:p-8 shadow-xl relative overflow-hidden">
+            {/* Background Glow */}
+            <div className={`absolute -top-24 -right-24 w-64 h-64 rounded-full blur-3xl opacity-20 pointer-events-none transition-colors duration-1000 ${totals.wastedAmount > 0 ? 'bg-[#EF4444]' : 'bg-[#22C55E]'}`} />
+
+            <div className="text-center pb-6 border-b border-gray-800 mb-6">
+              <p className="text-gray-500 uppercase tracking-widest text-xs font-bold mb-2 font-mono">Total Yearly Waste</p>
+              <div className={`text-6xl md:text-7xl font-space font-extrabold tracking-tighter transition-colors ${totals.wastedAmount > 0 ? 'text-[#EF4444]' : 'text-[#22C55E]'}`}>
+                {formatCurrency(totals.wastedAmount, globalCurrency)}
+              </div>
+              {totals.wastedAmount > 0 ? (
+                <p className="text-[#EF4444]/80 mt-2 text-sm font-medium">Bleeding {overallWastePercentage}% of your {formatCurrency(totals.yearlyCost, globalCurrency)}/yr budget.</p>
+              ) : (
+                <p className="text-[#22C55E]/80 mt-2 text-sm font-medium">Zero waste detected.</p>
+              )}
+            </div>
+
+            {/* AI Advisor / Cancel Actions */}
+            {aiAdvisor.recommendations.length > 0 ? (
+              <div>
+                <div className="flex justify-between items-center mb-4">
+                  <div className="flex items-center gap-2 text-[#EF4444] font-semibold text-sm">
+                    <AlertCircle className="w-4 h-4" />
+                    Action Required
+                  </div>
+                </div>
+                
+                <div className="space-y-3">
+                  {aiAdvisor.recommendations.map(rec => (
+                    <div key={`rec-${rec.id}`} className="bg-[#EF4444]/10 border border-[#EF4444]/20 p-4 rounded-xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 hover:border-[#EF4444]/40 transition-colors">
+                      <div>
+                        <div className="text-white font-bold">{rec.name}</div>
+                        <div className="text-xs text-red-300/80 mt-1">{rec.advice}</div>
+                      </div>
+                      <a 
+                        href={`https://www.google.com/search?q=how+to+cancel+${encodeURIComponent(rec.name.toLowerCase())}+subscription`} 
+                        target="_blank" 
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#EF4444] bg-[#EF4444]/10 hover:bg-[#EF4444] hover:text-white px-4 py-2 rounded-lg transition-colors whitespace-nowrap"
+                      >
+                        Cancel <ArrowRight className="w-3 h-3" />
+                      </a>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="h-40 flex flex-col items-center justify-center text-center">
+                <CheckCircle2 className="w-12 h-12 text-[#22C55E]/20 mb-3" />
+                <p className="text-gray-500 text-sm">Add your subscriptions on the left.<br/>Live waste metrics will appear here.</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Bottom Strip: Net Pay Calculator */}
+        <div className="bg-[#111827] border border-gray-800 rounded-2xl p-6 shadow-xl">
+          <div className="flex flex-col lg:flex-row gap-8 lg:items-center">
+            <div className="lg:w-1/3">
+              <h2 className="text-lg font-bold font-space text-white flex items-center gap-2 mb-2">
+                <Calculator className="w-5 h-5 text-blue-500" />
+                Net Pay Calculator
+              </h2>
+              <p className="text-xs text-gray-400">See your true monthly take-home pay after tax and 6% inflation. *Estimates only.</p>
+            </div>
+            
+            <div className="lg:w-2/3 grid grid-cols-2 sm:grid-cols-4 gap-4 items-end">
+              <div>
+                <label className="text-[10px] uppercase tracking-wider text-gray-500 font-bold block mb-1">Tax System</label>
                 <select
                   value={salaryParams.country}
                   onChange={(e) => setSalaryParams({ ...salaryParams, country: e.target.value })}
-                  className="w-full px-4 py-3 sm:py-4 bg-transparent border-none focus:ring-0 outline-none text-base font-semibold text-gray-900 cursor-pointer"
+                  className="w-full bg-[#0B0F14] border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
                 >
-                  <option value="US (Federal)">US (Federal Simplified)</option>
-                  <option value="India (New Regime)">India (New Regime)</option>
-                  <option value="UK">UK (Simplified)</option>
+                  <option value="US (Federal)">US (Federal)</option>
+                  <option value="India (New Regime)">India (New)</option>
+                  <option value="UK">UK</option>
                 </select>
               </div>
-              <div className="w-full sm:w-48 border-b sm:border-b-0 sm:border-r border-gray-100 flex-shrink-0">
-                <div className="relative h-full flex items-center">
-                  <span className="absolute left-3 text-gray-400 font-medium">$</span>
-                  <input
+              <div className="relative">
+                 <label className="text-[10px] uppercase tracking-wider text-gray-500 font-bold block mb-1">Gross Annual</label>
+                 <input
                     type="number"
-                    min="0"
-                    placeholder="Annual Gross"
                     value={salaryParams.annualSalary}
                     onChange={(e) => setSalaryParams({ ...salaryParams, annualSalary: e.target.value })}
-                    className="w-full pl-7 pr-4 py-3 sm:py-4 bg-transparent border-none focus:ring-0 outline-none text-base placeholder:text-gray-400 font-medium"
+                    className="w-full bg-[#0B0F14] border border-gray-700 rounded-lg pl-3 pr-2 py-2 text-sm text-white focus:outline-none focus:border-blue-500"
                   />
-                </div>
               </div>
-              <div className="w-full sm:w-40 border-b sm:border-b-0 border-gray-100 flex-shrink-0">
-                <div className="relative h-full flex items-center">
-                  <span className="absolute left-3 text-gray-400 font-medium">-</span>
-                  <input
-                    type="number"
-                    min="0"
-                    placeholder="Deductions"
-                    value={salaryParams.deductions}
-                    onChange={(e) => setSalaryParams({ ...salaryParams, deductions: e.target.value })}
-                    className="w-full pl-7 pr-4 py-3 sm:py-4 bg-transparent border-none focus:ring-0 outline-none text-base placeholder:text-gray-400 font-medium"
-                  />
-                </div>
+               <div className="relative">
+                 <label className="text-[10px] uppercase tracking-wider text-gray-500 font-bold block mb-1">Subscriptions (Deduction)</label>
+                 <div className="w-full bg-[#0B0F14] border border-gray-800 rounded-lg pl-3 pr-2 py-2 text-sm text-gray-400">
+                   {formatCurrency(totals.yearlyCost, globalCurrency)}
+                 </div>
+              </div>
+
+              <div className="bg-[#0B0F14] border border-[#22C55E]/30 rounded-lg p-2 text-center h-full flex flex-col justify-center">
+                 <span className="text-[10px] uppercase tracking-wider text-gray-500 font-bold">Monthly Net</span>
+                 <div className="text-xl font-bold font-space text-[#22C55E]">
+                   {formatCurrency(salaryResult.monthly_inhand, globalCurrency)}
+                 </div>
               </div>
             </div>
-          </div>
-
-          <div
-            className="bg-white rounded-3xl shadow-sm border border-gray-100 p-6 sm:p-10 pt-8"
-          >
-            {/* Total Salary Visual */}
-            <div className="text-center border-b border-gray-100 pb-8 mb-8">
-              <p className="text-gray-400 uppercase tracking-widest text-xs font-bold mb-3 font-mono">Monthly In-Hand</p>
-              <div className="flex justify-center items-center gap-2">
-                <span className="text-6xl sm:text-7xl font-space font-extrabold tracking-tighter text-emerald-600">
-                  {formatCurrency(salaryResult.monthly_inhand, currentCurrency)}
-                </span>
-              </div>
-              <p className="text-emerald-700/80 mt-3 text-sm font-medium">Net Takeaway (Annual: {formatCurrency(salaryResult.monthly_inhand * 12, currentCurrency)})</p>
-              <p className="text-gray-400 text-xs mt-2">*Estimates only</p>
-            </div>
-
-            {/* AI Insight */}
-            {(aiSalaryInsight || isAnalyzingSalary) && (
-              <div className="mb-8 bg-purple-50/50 border border-purple-100 p-4 rounded-2xl flex flex-col gap-2 relative overflow-hidden">
-                <div className="flex items-center gap-2 text-purple-600 font-semibold text-sm">
-                  <Sparkles className="w-4 h-4" />
-                  AI Salary Analysis 
-                </div>
-                <div className="text-sm text-purple-900 leading-relaxed font-medium">
-                  {isAnalyzingSalary ? 'Analyzing your compensation structure...' : aiSalaryInsight}
-                </div>
-              </div>
-            )}
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="bg-gray-50 p-5 rounded-xl border border-gray-100 shadow-sm relative overflow-hidden group">
-                <span className="text-gray-500 text-xs uppercase tracking-wider font-mono">Tax Obligation</span>
-                <div className="text-3xl font-space font-bold text-gray-900 mt-1">
-                  {formatCurrency(salaryResult.tax, currentCurrency)}
-                </div>
-                <span className="text-xs text-red-600/70 block mt-1 font-medium">
-                  Total Yearly Tax Rate
-                </span>
-              </div>
-              
-              <div className="bg-gray-50 p-5 rounded-xl border border-gray-100 shadow-sm relative overflow-hidden group">
-                <span className="text-gray-500 text-xs uppercase tracking-wider font-mono">Real Value (6% Inflation)</span>
-                <div className="text-3xl font-space font-bold text-gray-900 mt-1">
-                  {formatCurrency(salaryResult.inflation_adjusted_monthly, currentCurrency)}
-                </div>
-                <span className="text-xs text-amber-700/70 block mt-1 font-medium bg-amber-50 w-fit px-2 py-0.5 rounded">
-                  Monthly Purchasing Power
-                </span>
-              </div>
-            </div>
-            
           </div>
         </div>
-      )}
+
+        {/* SEO Tiny Accordion */}
+        <div className="pt-8">
+          <details className="group border border-gray-800 bg-[#111827]/50 rounded-xl">
+             <summary className="flex justify-between items-center font-medium cursor-pointer list-none p-4 text-xs text-gray-400 hover:text-gray-300">
+               <span>Frequently Asked Questions</span>
+               <span className="transition group-open:rotate-180">
+                 <svg fill="none" height="24" shapeRendering="geometricPrecision" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" viewBox="0 0 24 24" width="24"><path d="M6 9l6 6 6-6"></path></svg>
+               </span>
+             </summary>
+             <div className="text-gray-500 text-xs px-4 pb-4 space-y-4">
+                <div>
+                  <strong className="text-gray-300 block mb-1">How to cancel a subscription?</strong>
+                  Use our SaaS Bleed Calculator above. Simply enter your subscriptions and it will generate direct cancellation links for Netflix, Spotify, Amazon Prime, and more.
+                </div>
+                <div>
+                  <strong className="text-gray-300 block mb-1">How much money is wasted on subscriptions?</strong>
+                  The average person wastes hundreds of dollars a year on unused SaaS. Calculate your exact yearly waste instantly using our tool.
+                </div>
+                 <div>
+                  <strong className="text-gray-300 block mb-1">How to calculate monthly salary after tax in India?</strong>
+                  Select &quot;India (New Regime)&quot; in our Net Pay Calculator to instantly see your monthly in-hand salary, adjusted for progressive tax brackets and inflation.
+                </div>
+             </div>
+          </details>
+        </div>
+
+      </div>
+      
+      {/* Basic Custom Scrollbar for mini list */}
+      <style dangerouslySetInnerHTML={{__html: `
+        .custom-scrollbar::-webkit-scrollbar {
+          width: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background-color: #374151;
+          border-radius: 10px;
+        }
+      `}} />
     </main>
   );
 }

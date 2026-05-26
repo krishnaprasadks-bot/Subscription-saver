@@ -63,7 +63,7 @@ export default function RootLayout({children}: {children: React.ReactNode}) {
           }}
         />
       </head>
-      <body className="antialiased bg-gray-50 text-gray-900 font-sans" suppressHydrationWarning>
+      <body className="antialiased bg-[#0B0F14] text-white font-sans" suppressHydrationWarning>
         {children}
       </body>
     </html>
