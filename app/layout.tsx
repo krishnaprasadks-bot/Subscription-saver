@@ -1,8 +1,3 @@
-export const Metadata = {
-  verification: {
-    google: 'google-site-verification=c82cy9swNMMGgBOkjYPxRwLZxBQnvt8NHEtywFMCuNA',
-  },
-}
 import type {Metadata} from 'next';
 import { Space_Grotesk, JetBrains_Mono, Inter } from 'next/font/google';
 import './globals.css'; // Global styles
