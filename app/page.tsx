@@ -376,7 +376,6 @@ export default function FinancialToolkit() {
                 {totals.wastedAmount > 0 ? (
                   <>
                     <p className="text-[#EF4444]/80 mt-2 text-sm font-medium">Bleeding {overallWastePercentage}% of your {formatCurrency(totals.yearlyCost, globalCurrency)}/yr budget.</p>
-                    <p className="text-orange-400 mt-1 text-sm font-bold flex items-center gap-1"><span className="text-base">🔥</span> You&apos;re wasting more than 72% of users</p>
                   </>
                 ) : (
                   <p className="text-[#22C55E]/80 mt-2 text-sm font-medium">Zero waste detected.</p>
